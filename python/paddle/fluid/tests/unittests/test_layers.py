@@ -2425,6 +2425,20 @@ class TestBook(LayerTest):
             out = layers.slice(input, axes=axes, starts=starts, ends=ends)
             return out
 
+    def make_scale_variable(self):
+        with program_guard(fluid.default_main_program(),
+                           fluid.default_startup_program()):
+            input = self._get_data(
+                name="input", shape=[3, 4, 5, 6], dtype='float32')
+            scale_var = self._get_data(
+                name="scale",
+                shape=[1],
+                dtype='float32',
+                append_batch_size=False)
+
+            out = layers.scale(input, scale=scale_var)
+            return out
+
     def make_softshrink(self):
         with program_guard(fluid.default_main_program(),
                            fluid.default_startup_program()):
@@ -2463,6 +2477,19 @@ class TestBook(LayerTest):
             data = self._get_data(
                 name='data', shape=[32, 128, 128], dtype="float32")
             out = layers.batch_norm(data)
+            return (out)
+
+    def make_batch_norm_momentum_variable(self):
+        with program_guard(fluid.default_main_program(),
+                           fluid.default_startup_program()):
+            data = self._get_data(
+                name='data', shape=[32, 128, 128], dtype="float32")
+            momentum = self._get_data(
+                name='momentum',
+                shape=[1],
+                dtype='float32',
+                append_batch_size=False)
+            out = layers.batch_norm(data, momentum=momentum)
             return (out)
 
     def make_range(self):
@@ -2653,6 +2680,14 @@ class TestBook(LayerTest):
             x = layers.data(name="x", shape=[245, 30, 30], dtype="float32")
             out = layers.strided_slice(
                 x, axes=axes, starts=starts, ends=ends, strides=strides)
+            return out
+
+    def test_fill_constant_batch_size_like(self):
+        with self.static_graph():
+            like = fluid.layers.fill_constant(
+                shape=[1, 200], value=10, dtype='int64')
+            out = layers.fill_constant_batch_size_like(
+                input=like, shape=[2, 3300], value=1315454564656, dtype='int64')
             return out
 
     def test_psroi_pool(self):
