@@ -12,6 +12,8 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
+#include <cuda.h>
+#include <curand_kernel.h>
 #include <string>
 #include "paddle/fluid/memory/memcpy.h"
 #include "paddle/fluid/operators/fake_quantize_op.h"
@@ -115,17 +117,40 @@ template struct FindChannelAbsMaxFunctor<platform::CUDADeviceContext, float>;
 
 template <typename T>
 __global__ void ClipAndQuantKernel(const T* in, const T* scale,
-                                   const int bin_cnt, const int n, T* out) {
+                                   const int bin_cnt, const int n, T* out,
+                                   const int seed) {
   int bid = threadIdx.x + blockIdx.x * blockDim.x;
   int tid = threadIdx.x;
+  curandStatePhilox4_32_10_t state;
+  int step_size = 0;
 
   T s = scale[0];
   for (int i = bid; i < n; i += blockDim.x * gridDim.x) {
+    if (step_size == 0) {
+      curand_init(seed, i, i, &state);
+      step_size = blockDim.x * gridDim.x;
+    } else {
+      curand_init(seed, i, step_size, &state);
+    }
+
     T x = in[i];
     T v = x > s ? s : x;
     v = v < -s ? -s : v;
     v = bin_cnt / s * v;
-    out[i] = round(v);
+    float threshold = v - floor(v);
+    float random_value = curand_uniform(&state);
+    float clip_value = 0.001;
+    if (threshold < (0.5 - clip_value)) {
+      out[i] = floor(v);
+    } else if (threshold > (0.5 + clip_value)) {
+      out[i] = ceil(v);
+    } else {
+      if (random_value > 0.5) {
+        out[i] = ceil(v);
+      } else {
+        out[i] = floor(v);
+      }
+    }
   }
 }
 
@@ -158,9 +183,10 @@ struct ClipAndFakeQuantFunctor<platform::CUDADeviceContext, T> {
     const T* in_data = in.data<T>();
     const T* scale_data = scale.data<T>();
     T* out_data = out->mutable_data<T>(ctx.GetPlace());
-
+    std::random_device rnd;
+    int seed = rnd();
     ClipAndQuantKernel<T><<<grid, block, 0, ctx.stream()>>>(
-        in_data, scale_data, bin_cnt, num, out_data);
+        in_data, scale_data, bin_cnt, num, out_data, seed);
   }
 };
 
@@ -220,7 +246,6 @@ struct ChannelClipAndFakeQuantFunctor<platform::CUDADeviceContext, T> {
     const T* in_data = in.data<T>();
     const T* scale_data = scale.data<T>();
     T* out_data = out->mutable_data<T>(ctx.GetPlace());
-
     ChannelClipAndQuantKernel<T><<<grid, block, 0, ctx.stream()>>>(
         in_data, scale_data, bin_cnt, num, channel, out_data);
   }
