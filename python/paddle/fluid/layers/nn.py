@@ -182,6 +182,7 @@ __all__ = [
     'hard_swish',
     'gather_tree',
     'uniform_random',
+    'clip_relu',
 ]
 
 
@@ -13577,6 +13578,25 @@ def deformable_roi_pooling(input,
             "trans_std": trans_std
         })
     return output
+
+
+def clip_relu(input, name=None):
+    """
+    """
+    helper = LayerHelper('clip_relu', **locals())
+    dtype = helper.input_dtype()
+    threshold = helper.create_parameter(
+        attr=helper.param_attr,
+        shape=[1],
+        dtype=dtype,
+        default_initializer=Constant(1.0))
+    out = helper.create_variable_for_type_inference(dtype)
+    helper.append_op(
+        type='clip_relu',
+        inputs={'X': input,
+                "Threshold": threshold},
+        outputs={'Out': out})
+    return out
 
 
 def shard_index(input, index_num, nshards, shard_id, ignore_value=-1):
